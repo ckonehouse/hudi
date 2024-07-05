@@ -267,6 +267,12 @@
       <version>${spark.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-mllib_${scala.binary.version}</artifactId>
+      <version>${spark.version}</version>
+    </dependency>
+
     <!-- Force to use 2.11.0 since hbase-server requires 2.7+ -->
     <dependency>
       <groupId>commons-io</groupId>
@@ -338,6 +344,5 @@
       <artifactId>tally-core</artifactId>
       <version>${tally.version}</version>
     </dependency>
-
   </dependencies>
 </project>

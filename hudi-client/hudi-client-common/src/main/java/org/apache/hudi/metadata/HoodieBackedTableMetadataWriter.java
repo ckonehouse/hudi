@@ -58,6 +58,7 @@ import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.common.util.CompactionUtils;
 import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.ReflectionUtils;
 import org.apache.hudi.common.util.StringUtils;
 import org.apache.hudi.common.util.ValidationUtils;
 import org.apache.hudi.common.util.collection.Pair;
@@ -106,10 +107,12 @@ import static org.apache.hudi.metadata.HoodieMetadataWriteUtils.createMetadataWr
 import static org.apache.hudi.metadata.HoodieTableMetadata.METADATA_TABLE_NAME_SUFFIX;
 import static org.apache.hudi.metadata.HoodieTableMetadata.SOLO_COMMIT_TIMESTAMP;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.DirectoryInfo;
+import static org.apache.hudi.metadata.HoodieTableMetadataUtil.getHoodieVectorRecordIterator;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.getInflightMetadataPartitions;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.getPartitionLatestFileSlicesIncludingInflight;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.getProjectedSchemaForFunctionalIndex;
 import static org.apache.hudi.metadata.HoodieTableMetadataUtil.readRecordKeysFromBaseFiles;
+import static org.apache.hudi.metadata.HoodieTableMetadataUtil.readVectorsFromBaseFiles;
 import static org.apache.hudi.metadata.MetadataPartitionType.FILES;
 import static org.apache.hudi.metadata.MetadataPartitionType.FUNCTIONAL_INDEX;
 import static org.apache.hudi.metadata.MetadataPartitionType.RECORD_INDEX;
@@ -410,6 +413,9 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
             }
             fileGroupCountAndRecordsPair = initializePartitionStatsIndex(partitionInfoList);
             break;
+          case VECTOR_INDEX:
+            fileGroupCountAndRecordsPair = initializeVectorIndexPartition(initializationTime);
+            break;
           default:
             throw new HoodieMetadataException(String.format("Unsupported MDT partition type: %s", partitionType));
         }
@@ -642,6 +648,94 @@ public abstract class HoodieBackedTableMetadataWriter<I> implements HoodieTableM
             record1.getCurrentLocation().getInstantTime(), 0);
           }).iterator();
     });
+  }
+
+  private Pair<Integer, HoodieData<HoodieRecord>> initializeVectorIndexPartition(String initializationTime) throws IOException {
+    final HoodieMetadataFileSystemView fsView = new HoodieMetadataFileSystemView(dataMetaClient,
+        dataMetaClient.getActiveTimeline(), metadata);
+    final HoodieTable hoodieTable = getHoodieTable(dataWriteConfig, dataMetaClient);
+
+    // Collect the list of latest base files present in each partition
+    List<String> partitions = metadata.getAllPartitionPaths();
+    fsView.loadAllPartitions();
+    HoodieData<HoodieVector> vectors = null;
+    if (dataMetaClient.getTableConfig().getTableType() == HoodieTableType.COPY_ON_WRITE) {
+      // for COW, we can only consider base files to initialize.
+      final List<Pair<String, HoodieBaseFile>> partitionBaseFilePairs = new ArrayList<>();
+      for (String partition : partitions) {
+        partitionBaseFilePairs.addAll(fsView.getLatestBaseFiles(partition)
+            .map(basefile -> Pair.of(partition, basefile)).collect(Collectors.toList()));
+      }
+
+      LOG.info("Initializing vector index from " + partitionBaseFilePairs.size() + " base files in " + partitions.size() + " partitions");
+
+      // Collect record keys from the files in parallel
+      vectors = readVectorsFromBaseFiles(
+          engineContext,
+          dataWriteConfig.getMetadataConfig().getVectorFieldName(),
+          dataWriteConfig,
+          partitionBaseFilePairs,
+          dataWriteConfig.getMetadataConfig().getVectorIndexMaxParallelism(),
+          dataWriteConfig.getBasePath(),
+          storageConf,
+          this.getClass().getSimpleName());
+    } else {
+      // TODO: Add support for MOR Tables
+      /*
+      final List<Pair<String, FileSlice>> partitionFileSlicePairs = new ArrayList<>();
+      for (String partition : partitions) {
+        fsView.getLatestFileSlices(partition).forEach(fs -> partitionFileSlicePairs.add(Pair.of(partition, fs)));
+      }
+
+      LOG.info("Initializing vector index from " + partitionFileSlicePairs.size() + " file slices in "
+          + partitions.size() + " partitions");
+      records = readVectorsFromFileSliceSnapshot(
+          engineContext,
+          partitionFileSlicePairs,
+          dataWriteConfig.getMetadataConfig().getRecordIndexMaxParallelism(),
+          this.getClass().getSimpleName(),
+          dataMetaClient,
+          dataWriteConfig,
+          hoodieTable);
+       */
+    }
+    vectors.persist("MEMORY_AND_DISK_SER");
+
+    // Get a count of vectors to be used in determining the number of file groups
+    engineContext.setJobStatus(this.getClass().getSimpleName(), "Counting the number of vectors");
+    final long vectorCount = vectors.count();
+
+    // Find the dimensions of the vectors
+    engineContext.setJobStatus(this.getClass().getSimpleName(), "Finding vector dimensions");
+    final int vectorDimension = vectors.mapPartitions(itr -> Collections.singletonList(itr.next().toFloatArray().length).iterator(), true)
+        .collectAsList().get(0);
+
+    // Initialize the file groups
+    final int vectorSize = vectorDimension * HoodieVector.BYTES;
+    final long vectorsPerIndex = dataWriteConfig.getMetadataConfig().getVectorIndexMaxFileGroupDataSizeBytes() / vectorSize;
+    final int fileGroupCount = (int) Math.ceil((double) vectorCount / vectorsPerIndex);
+
+    // Cluster vectors into file groups
+    HoodieVectorClusteringAlgorithm clusteringAlgorithm = (HoodieVectorClusteringAlgorithm)ReflectionUtils.loadClass(
+        dataWriteConfig.getMetadataConfig().getVectorIndexClusteringAlgorithmClass(), dataWriteConfig);
+    LOG.info("Clustering {} vectors into {} groups using {}", vectorCount, fileGroupCount, clusteringAlgorithm.getClass().getName());
+    HoodieData<HoodieVector> clusteredVectors = clusteringAlgorithm.cluster(engineContext, vectors, fileGroupCount);
+    clusteredVectors.persist("MEMORY_AND_DISK_SER");
+
+    // Index each file group into a vector index
+    // Vector indexes create binary model files which need to be saved outside of HUDI base files. We are saving these files within the
+    // vector index partition with the director name equal to the index creation timestamp.
+    final String indexDirectory = HoodieTableMetadata.getMetadataPartitionPath(dataWriteConfig.getBasePath(), MetadataPartitionType.VECTOR_INDEX)
+        + StoragePath.SEPARATOR + initializationTime;
+    HoodieHNSWVectorIndexingAlgorithm indexingAlgorithm = (HoodieHNSWVectorIndexingAlgorithm)ReflectionUtils.loadClass(
+        dataWriteConfig.getMetadataConfig().getVectorIndexIndexingAlgorithmClass(), dataWriteConfig);
+    LOG.info("Indexing {} vector groups using {}", fileGroupCount, indexingAlgorithm.getClass().getName());
+    List<String> indexPaths = indexingAlgorithm.index(engineContext, clusteredVectors, indexDirectory, metadataMetaClient);
+
+    // Create records for MDT
+    HoodieData<HoodieRecord> records = clusteredVectors.mapPartitionsWithIndex(HoodieTableMetadataUtil::getHoodieVectorRecordIterator, true);
+
+    return Pair.of(fileGroupCount, records);
   }
 
   private Pair<Integer, HoodieData<HoodieRecord>> initializeFilesPartition(List<DirectoryInfo> partitionInfoList) {

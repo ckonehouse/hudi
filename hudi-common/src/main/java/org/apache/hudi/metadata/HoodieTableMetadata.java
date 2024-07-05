@@ -150,6 +150,10 @@ public interface HoodieTableMetadata extends Serializable, AutoCloseable {
     return new HoodieBackedTableMetadata(engineContext, storage, metadataConfig, datasetBasePath, reuse);
   }
 
+  public static String getMetadataPartitionPath(String basePath, MetadataPartitionType partitionType) {
+    return basePath + HoodieTableMetaClient.METADATA_TABLE_FOLDER_PATH + StoragePath.SEPARATOR + partitionType.getPartitionPath();
+  }
+
   /**
    * Fetch all the files at the given partition path, per the latest snapshot of the metadata.
    */

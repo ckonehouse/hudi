@@ -18,6 +18,8 @@
 
 package org.apache.hudi.metadata;
 
+import org.apache.avro.JsonProperties;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.hudi.avro.ConvertingGenericData;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.avro.model.BooleanWrapper;
@@ -94,6 +96,7 @@ import org.apache.avro.AvroTypeException;
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.IndexedRecord;
+import org.apache.spark.mllib.linalg.Vector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -112,6 +115,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +161,7 @@ public class HoodieTableMetadataUtil {
   public static final String PARTITION_NAME_RECORD_INDEX = "record_index";
   public static final String PARTITION_NAME_FUNCTIONAL_INDEX_PREFIX = "func_index_";
   public static final String PARTITION_NAME_SECONDARY_INDEX = "secondary_index";
+  public static final String PARTITION_NAME_VECTOR_INDEX = "vector_index";
 
   private HoodieTableMetadataUtil() {
   }
@@ -1833,6 +1838,61 @@ public class HoodieTableMetadataUtil {
     });
   }
 
+  /**
+   * Reads the Vectors from the base files and returns a {@link HoodieData} of {@link Vector}.
+   */
+  public static HoodieData<HoodieVector> readVectorsFromBaseFiles(HoodieEngineContext engineContext,
+                                                            String vectorFieldName,
+                                                            HoodieConfig config,
+                                                            List<Pair<String, HoodieBaseFile>> partitionBaseFilePairs,
+                                                            int vectorIndexMaxParallelism,
+                                                            String basePath,
+                                                            StorageConfiguration<?> configuration,
+                                                            String activeModule) {
+    if (partitionBaseFilePairs.isEmpty()) {
+      return engineContext.emptyHoodieData();
+    }
+
+    engineContext.setJobStatus(activeModule, "Vector Index: reading vectors from " + partitionBaseFilePairs.size() + " base files");
+    final int parallelism = Math.min(partitionBaseFilePairs.size(), vectorIndexMaxParallelism);
+    return engineContext.parallelize(partitionBaseFilePairs, parallelism).flatMap(partitionAndBaseFile -> {
+      final String partition = partitionAndBaseFile.getKey();
+      final HoodieBaseFile baseFile = partitionAndBaseFile.getValue();
+      final String filename = baseFile.getFileName();
+      StoragePath dataFilePath = filePath(basePath, partition, filename);
+
+      HoodieFileReader reader = HoodieIOFactory.getIOFactory(HoodieStorageUtils.getStorage(basePath, configuration))
+          .getReaderFactory(HoodieRecord.HoodieRecordType.AVRO)
+          .getFileReader(config, dataFilePath);
+
+      // Construct the schema for the vector field
+      Schema.Field vectorField = new Schema.Field(vectorFieldName, Schema.createArray(Schema.create(Schema.Type.FLOAT)), "", JsonProperties.NULL_VALUE);
+      Schema vectorSchema = Schema.createRecord("HoodieVector", "", "", false);
+      vectorSchema.setFields(Collections.singletonList(vectorField));
+
+      ClosableIterator<HoodieRecord<IndexedRecord>> recordIterator = reader.getRecordIterator(vectorSchema);
+
+      // Return an iterator which reads the vector and returns a HoodieVector
+      return new ClosableIterator<HoodieVector>() {
+        @Override
+        public void close() {
+          recordIterator.close();
+        }
+
+        @Override
+        public boolean hasNext() {
+          return recordIterator.hasNext();
+        }
+
+        @Override
+        public HoodieVector next() {
+          HoodieRecord<IndexedRecord> hoodieRecord = recordIterator.next();
+          return new HoodieVector((GenericRecord) hoodieRecord.getData(), vectorFieldName);
+        }
+      };
+    });
+  }
+
   public static Schema getProjectedSchemaForFunctionalIndex(HoodieFunctionalIndexDefinition indexDefinition, HoodieTableMetaClient metaClient) throws Exception {
     TableSchemaResolver schemaResolver = new TableSchemaResolver(metaClient);
     Schema tableSchema = schemaResolver.getTableAvroSchema();
@@ -1869,6 +1929,22 @@ public class HoodieTableMetadataUtil {
         return forDelete
                 ? HoodieMetadataPayload.createRecordIndexDelete(recordKeyIterator.next())
                 : HoodieMetadataPayload.createRecordIndexUpdate(recordKeyIterator.next(), partition, fileId, instantTime, 0);
+      }
+    };
+  }
+
+  public static Iterator<HoodieRecord> getHoodieVectorRecordIterator(int clusterIndex, Iterator<HoodieVector> vectorIterator) {
+    return new Iterator<HoodieRecord>() {
+      private int vectorIndex = 0;
+
+      @Override
+      public boolean hasNext() {
+        return vectorIterator.hasNext();
+      }
+
+      @Override
+      public HoodieRecord next() {
+        return HoodieMetadataPayload.createVectorIndexUpdate(clusterIndex, vectorIndex++, vectorIterator.next());
       }
     };
   }

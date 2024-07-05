@@ -23,6 +23,7 @@ import org.apache.hudi.avro.model.HoodieMetadataColumnStats;
 import org.apache.hudi.avro.model.HoodieMetadataFileInfo;
 import org.apache.hudi.avro.model.HoodieMetadataRecord;
 import org.apache.hudi.avro.model.HoodieRecordIndexInfo;
+import org.apache.hudi.avro.model.HoodieVectorIndexInfo;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.EmptyHoodieRecordPayload;
 import org.apache.hudi.common.model.HoodieAvroRecord;
@@ -108,6 +109,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   private static final int METADATA_TYPE_BLOOM_FILTER = 4;
   private static final int METADATA_TYPE_RECORD_INDEX = 5;
   private static final int METADATA_TYPE_PARTITION_STATS = 6;
+  private static final int METADATA_TYPE_VECTOR_INDEX = 7;
 
   /**
    * HoodieMetadata schema field ids
@@ -118,6 +120,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   public static final String SCHEMA_FIELD_ID_COLUMN_STATS = "ColumnStatsMetadata";
   public static final String SCHEMA_FIELD_ID_BLOOM_FILTER = "BloomFilterMetadata";
   public static final String SCHEMA_FIELD_ID_RECORD_INDEX = "recordIndexMetadata";
+  public static final String SCHEMA_FIELD_ID_VECTOR_INDEX = "vectorIndexMetadata";
 
   /**
    * HoodieMetadata bloom filter payload field ids
@@ -160,6 +163,11 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   public static final int RECORD_INDEX_MISSING_FILEINDEX_FALLBACK = -1;
 
   /**
+   * HoodieMetadata vector index payload field ids
+   */
+  public static final String VECTOR_INDEX_FIELD_VECTOR = "vector";
+
+  /**
    * NOTE: PLEASE READ CAREFULLY
    * <p>
    * In Avro 1.10 generated builders rely on {@code SpecificData.getForSchema} invocation that in turn
@@ -182,6 +190,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   private HoodieMetadataBloomFilter bloomFilterMetadata = null;
   private HoodieMetadataColumnStats columnStatMetadata = null;
   private HoodieRecordIndexInfo recordIndexMetadata;
+  private HoodieVectorIndexInfo vectorIndexMetadata;
   private boolean isDeletedRecord = false;
 
   public HoodieMetadataPayload(@Nullable GenericRecord record, Comparable<?> orderingVal) {
@@ -258,6 +267,9 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
             recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID).toString(),
             Long.parseLong(recordIndexRecord.get(RECORD_INDEX_FIELD_INSTANT_TIME).toString()),
             Integer.parseInt(recordIndexRecord.get(RECORD_INDEX_FIELD_FILEID_ENCODING).toString()));
+      } else if (type == METADATA_TYPE_VECTOR_INDEX) {
+        GenericRecord vectorIndexRecord = getNestedFieldValue(record, SCHEMA_FIELD_ID_VECTOR_INDEX);
+        vectorIndexMetadata = new HoodieVectorIndexInfo(null);
       }
     } else {
       this.isDeletedRecord = true;
@@ -265,32 +277,38 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
   }
 
   private HoodieMetadataPayload(String key, int type, Map<String, HoodieMetadataFileInfo> filesystemMetadata) {
-    this(key, type, filesystemMetadata, null, null, null);
+    this(key, type, filesystemMetadata, null, null, null, null);
   }
 
   private HoodieMetadataPayload(String key, HoodieMetadataBloomFilter metadataBloomFilter) {
-    this(key, METADATA_TYPE_BLOOM_FILTER, null, metadataBloomFilter, null, null);
+    this(key, METADATA_TYPE_BLOOM_FILTER, null, metadataBloomFilter, null, null, null);
   }
 
   private HoodieMetadataPayload(String key, HoodieMetadataColumnStats columnStats) {
-    this(key, METADATA_TYPE_COLUMN_STATS, null, null, columnStats, null);
+    this(key, METADATA_TYPE_COLUMN_STATS, null, null, columnStats, null, null);
   }
 
   private HoodieMetadataPayload(String key, HoodieRecordIndexInfo recordIndexMetadata) {
-    this(key, METADATA_TYPE_RECORD_INDEX, null, null, null, recordIndexMetadata);
+    this(key, METADATA_TYPE_RECORD_INDEX, null, null, null, recordIndexMetadata, null);
+  }
+
+  private HoodieMetadataPayload(String key, HoodieVectorIndexInfo vectorIndexMetadata) {
+    this(key, METADATA_TYPE_VECTOR_INDEX, null, null, null, null, vectorIndexMetadata);
   }
 
   protected HoodieMetadataPayload(String key, int type,
       Map<String, HoodieMetadataFileInfo> filesystemMetadata,
       HoodieMetadataBloomFilter metadataBloomFilter,
       HoodieMetadataColumnStats columnStats,
-      HoodieRecordIndexInfo recordIndexMetadata) {
+      HoodieRecordIndexInfo recordIndexMetadata,
+      HoodieVectorIndexInfo vectorIndexMetadata) {
     this.key = key;
     this.type = type;
     this.filesystemMetadata = filesystemMetadata;
     this.bloomFilterMetadata = metadataBloomFilter;
     this.columnStatMetadata = columnStats;
     this.recordIndexMetadata = recordIndexMetadata;
+    this.vectorIndexMetadata = vectorIndexMetadata;
   }
 
   /**
@@ -446,7 +464,7 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
     }
 
     HoodieMetadataRecord record = new HoodieMetadataRecord(key, type, filesystemMetadata, bloomFilterMetadata,
-        columnStatMetadata, recordIndexMetadata);
+        columnStatMetadata, recordIndexMetadata, vectorIndexMetadata);
     return Option.of(record);
   }
 
@@ -790,6 +808,29 @@ public class HoodieMetadataPayload implements HoodieRecordPayload<HoodieMetadata
    */
   public HoodieRecordGlobalLocation getRecordGlobalLocation() {
     return HoodieTableMetadataUtil.getLocationFromRecordIndexInfo(recordIndexMetadata);
+  }
+
+  /**
+   * Create and return a {@code HoodieMetadataPayload} to insert or update an entry for the vector index.
+   * Each entry maps an integer index of the record to a vector.
+   *
+   * @param clusterIndex  The index of the cluster. Each cluster contains many vectors.
+   * @param vectorIndex   The index of the vector within the cluster
+   * @param vector        The vector
+   */
+  public static HoodieRecord<HoodieMetadataPayload> createVectorIndexUpdate(int clusterIndex, int vectorIndex, HoodieVector vector) {
+    // Record key will be hex encoded and prefixed with the clusterIndex
+    final String recordKey = String.format("%s_%s", Integer.toHexString(clusterIndex), Integer.toHexString(vectorIndex));
+    HoodieKey key = new HoodieKey(recordKey, MetadataPartitionType.VECTOR_INDEX.getPartitionPath());
+    HoodieMetadataPayload payload = new HoodieMetadataPayload(recordKey, new HoodieVectorIndexInfo(vector.toList()));
+    return new HoodieAvroRecord<>(key, payload);
+  }
+
+  /**
+   * If this is a vector index entry, returns the vector
+   */
+  public HoodieVector getVector() {
+    return new HoodieVector(vectorIndexMetadata.getVector());
   }
 
   public boolean isDeleted() {
