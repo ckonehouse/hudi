@@ -162,6 +162,10 @@
                   <include>commons-codec:commons-codec</include>
                   <include>commons-io:commons-io</include>
                   <include>org.openjdk.jol:jol-core</include>
+
+                  <include>com.stepstone.search.hnswlib.jna:hnswlib-jna</include>
+                  <include>net.java.dev.jna:jna</include>
+                  <include>net.java.dev.jna:jna-platform</include>
                 </includes>
               </artifactSet>
               <relocations combine.children="append">
@@ -379,6 +383,22 @@
       <groupId>org.apache.curator</groupId>
       <artifactId>curator-recipes</artifactId>
       <version>${zk-curator.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.stepstone.search.hnswlib.jna</groupId>
+      <artifactId>hnswlib-jna</artifactId>
+      <version>1.4.2</version>
+    </dependency>
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+      <version>5.14.0</version>
+    </dependency>
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna-platform</artifactId>
+      <version>5.14.0</version>
     </dependency>
   </dependencies>
 
