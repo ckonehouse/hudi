@@ -33,6 +33,7 @@ import static org.apache.hudi.common.config.HoodieMetadataConfig.ENABLE_METADATA
 import static org.apache.hudi.common.config.HoodieMetadataConfig.ENABLE_METADATA_INDEX_COLUMN_STATS;
 import static org.apache.hudi.common.config.HoodieMetadataConfig.ENABLE_METADATA_INDEX_PARTITION_STATS;
 import static org.apache.hudi.common.config.HoodieMetadataConfig.RECORD_INDEX_ENABLE_PROP;
+import static org.apache.hudi.common.config.HoodieMetadataConfig.VECTOR_INDEX_ENABLE_PROP;
 import static org.apache.hudi.common.util.ConfigUtils.getBooleanWithAltKeys;
 import static org.apache.hudi.common.util.ConfigUtils.getStringWithAltKeys;
 import static org.apache.hudi.common.util.StringUtils.EMPTY_STRING;
@@ -84,7 +85,14 @@ public enum MetadataPartitionType {
     public boolean isMetadataPartitionEnabled(TypedProperties writeConfig) {
       return getBooleanWithAltKeys(writeConfig, ENABLE_METADATA_INDEX_PARTITION_STATS) && nonEmpty(getStringWithAltKeys(writeConfig, COLUMN_STATS_INDEX_FOR_COLUMNS, EMPTY_STRING));
     }
+  },
+  VECTOR_INDEX(HoodieTableMetadataUtil.PARTITION_NAME_VECTOR_INDEX, "vector-index-") {
+    @Override
+    public boolean isMetadataPartitionEnabled(TypedProperties writeConfig) {
+      return getBooleanWithAltKeys(writeConfig, VECTOR_INDEX_ENABLE_PROP);
+    }
   };
+
 
   // Partition path in metadata table.
   private final String partitionPath;
