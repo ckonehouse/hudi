@@ -351,6 +351,53 @@ public final class HoodieMetadataConfig extends HoodieConfig {
       .sinceVersion("1.0.0")
       .withDocumentation("Parallelism to use, when generating partition stats index.");
 
+  public static final ConfigProperty<Boolean> VECTOR_INDEX_ENABLE_PROP = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.enable")
+      .defaultValue(false)
+      .markAdvanced()
+      .sinceVersion("1.0.0")
+      .withDocumentation("Create the HUDI Vector Index within the Metadata Table");
+
+  public static final ConfigProperty<Integer> VECTOR_INDEX_MAX_PARALLELISM = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.max.init.parallelism")
+      .defaultValue(100000)
+      .markAdvanced()
+      .sinceVersion("1.0.0")
+      .withDocumentation("Maximum parallelism to use when initializing Vector Index.");
+
+  public static final ConfigProperty<String> VECTOR_INDEX_FIELD_NAME = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.field.name")
+      .defaultValue("vector")
+      .markAdvanced()
+      .sinceVersion("1.0.0")
+      .withDocumentation("The name of the field which stores the vector for the record.");
+
+  public static final ConfigProperty<Long> VECTOR_INDEX_MAX_FILE_GROUP_DATA_SIZE = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.max.file.group.data.size")
+      .defaultValue(2 * 1024 * 1024 * 1024L) // 2GB data / file group which would be mapped to a single index file
+      .markAdvanced()
+      .sinceVersion("1.0.0")
+      .withDocumentation("The maximum size of vector data to index in a single file group. Very large file groups would be inefficient to compact and index.");
+
+  public static final ConfigProperty<String> VECTOR_INDEX_CLUSTERING_ALGORITHM_CLASS = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.clustering.algorithm.classname")
+      .defaultValue("org.apache.hudi.metadata.HoodieRandomVectorClusteringAlgorithm")
+      .sinceVersion("1.0.0")
+      .withDocumentation("The implementation class for the clustering algorithm to be used to cluster the vectors during indexing.");
+
+  public static final ConfigProperty<String> VECTOR_INDEX_INDEXING_ALGORITHM_CLASS = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.indexing.algorithm.classname")
+      .defaultValue("org.apache.hudi.metadata.HoodieHNSWVectorIndexingAlgorithm")
+      .sinceVersion("1.0.0")
+      .withDocumentation("The implementation class for the indexing algorithm to be used to index the vectors in each cluster.");
+
+  public static final ConfigProperty<Integer> VECTOR_INDEX_MAX_THREADS = ConfigProperty
+      .key(METADATA_PREFIX + ".vector.index.max.threads")
+      .defaultValue(2)
+      .markAdvanced()
+      .sinceVersion("1.0.0")
+      .withDocumentation("The maximum number of threads to use on each executor for Indexing. This should be a 1-2x of vCores assigned to each executor.");
+
   public long getMaxLogFileSize() {
     return getLong(MAX_LOG_FILE_SIZE_BYTES_PROP);
   }
@@ -493,6 +540,34 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
   public int getPartitionStatsIndexParallelism() {
     return getInt(PARTITION_STATS_INDEX_PARALLELISM);
+  }
+
+  public boolean isVectorIndexEnabled() {
+    return isEnabled() && getBooleanOrDefault(VECTOR_INDEX_ENABLE_PROP);
+  }
+
+  public int getVectorIndexMaxParallelism() {
+    return getInt(VECTOR_INDEX_MAX_PARALLELISM);
+  }
+
+  public String getVectorFieldName() {
+    return getString(VECTOR_INDEX_FIELD_NAME);
+  }
+
+  public long getVectorIndexMaxFileGroupDataSizeBytes() {
+    return getLong(VECTOR_INDEX_MAX_FILE_GROUP_DATA_SIZE);
+  }
+
+  public String getVectorIndexClusteringAlgorithmClass() {
+    return getString(VECTOR_INDEX_CLUSTERING_ALGORITHM_CLASS);
+  }
+
+  public String getVectorIndexIndexingAlgorithmClass() {
+    return getString(VECTOR_INDEX_INDEXING_ALGORITHM_CLASS);
+  }
+
+  public int getMaxCoresForVectorIndexing() {
+    return getInt(VECTOR_INDEX_MAX_THREADS);
   }
 
   public static class Builder {
@@ -690,6 +765,11 @@ public final class HoodieMetadataConfig extends HoodieConfig {
 
     public Builder withPartitionStatsIndexParallelism(int parallelism) {
       metadataConfig.setValue(PARTITION_STATS_INDEX_PARALLELISM, String.valueOf(parallelism));
+      return this;
+    }
+
+    public Builder withEnableVectorIndex(boolean enabled) {
+      metadataConfig.setValue(VECTOR_INDEX_ENABLE_PROP, String.valueOf(enabled));
       return this;
     }
 
