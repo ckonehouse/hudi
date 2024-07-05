@@ -432,6 +432,25 @@
                 }
             ],
             "default" : null
+        },
+        {
+            "name": "vectorIndexMetadata",
+            "doc": "Information about the vector index build on the records",
+            "type": [
+                "null",
+                {
+                    "type": "record",
+                    "name": "HoodieVectorIndexInfo",
+                    "fields": [
+                        {
+                            "name": "vector",
+                            "type": { "type":  "array", "items": "float" },
+                            "doc": "The vector representation of the record"
+                        }
+                    ]
+                }
+            ],
+            "default" : null
         }
     ]
 }
