@@ -20,6 +20,7 @@
 package org.apache.hudi.common.data;
 
 import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.function.SerializableBiFunction;
 import org.apache.hudi.common.function.SerializableFunction;
 import org.apache.hudi.common.function.SerializablePairFunction;
 import org.apache.hudi.common.util.collection.Pair;
@@ -119,6 +120,22 @@ public interface HoodieData<T> extends Serializable {
    */
   <O> HoodieData<O> mapPartitions(SerializableFunction<Iterator<T>,
       Iterator<O>> func, boolean preservesPartitioning);
+
+  /**
+   * Maps every element in the collection's partition (if applicable) by applying provided
+   * mapping {@code func} to every collection's partition
+   *
+   * This is an intermediate operation
+   *
+   * @param func                  serializable map function accepting {@link Iterator} of a single
+   *                              partition's elements and returning a new {@link Iterator} mapping
+   *                              every element of the partition into a new one
+   * @param preservesPartitioning whether to preserve partitioning in the resulting collection
+   * @param <O>                   output object type
+   * @return {@link HoodieData<O>} holding mapped elements
+   */
+  <O> HoodieData<O> mapPartitionsWithIndex(SerializableBiFunction<Integer, Iterator<T>,
+        Iterator<O>> func, boolean preservesPartitioning);
 
   /**
    * Maps every element in the collection into a collection of the new elements using provided

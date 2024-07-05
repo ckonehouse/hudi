@@ -20,6 +20,7 @@
 package org.apache.hudi.common.data;
 
 import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.function.SerializableBiFunction;
 import org.apache.hudi.common.function.SerializableFunction;
 import org.apache.hudi.common.function.SerializablePairFunction;
 import org.apache.hudi.common.util.ValidationUtils;
@@ -29,6 +30,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
 import java.util.Spliterators;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -123,6 +125,18 @@ public class HoodieListData<T> extends HoodieBaseListData<T> implements HoodieDa
         StreamSupport.stream(
             Spliterators.spliteratorUnknownSize(
                 mapper.apply(asStream().iterator()), Spliterator.ORDERED), true),
+        lazy
+    );
+  }
+
+  @Override
+  public <O> HoodieData<O> mapPartitionsWithIndex(SerializableBiFunction<Integer, Iterator<T>, Iterator<O>> func, boolean preservesPartitioning) {
+    BiFunction<Integer, Iterator<T>, Iterator<O>> mapper = throwingMapWrapper(func);
+    // TODO: Not implemented correctly as it uses a fixed index value of 1 below
+    return new HoodieListData<>(
+        StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(
+                mapper.apply(1, asStream().iterator()), Spliterator.ORDERED), true),
         lazy
     );
   }

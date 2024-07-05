@@ -21,6 +21,7 @@ package org.apache.hudi.common.function;
 import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieException;
 
+import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -36,6 +37,16 @@ public class FunctionWrapper {
     return v1 -> {
       try {
         return throwingMapFunction.apply(v1);
+      } catch (Exception e) {
+        throw new HoodieException("Error occurs when executing map", e);
+      }
+    };
+  }
+
+  public static <I, O> BiFunction<Integer, I, O> throwingMapWrapper(SerializableBiFunction<Integer, I, O> throwingMapFunction) {
+    return (i, v1) -> {
+      try {
+        return throwingMapFunction.apply(i, v1);
       } catch (Exception e) {
         throw new HoodieException("Error occurs when executing map", e);
       }

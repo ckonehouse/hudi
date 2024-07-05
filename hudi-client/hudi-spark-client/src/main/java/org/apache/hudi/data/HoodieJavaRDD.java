@@ -23,6 +23,7 @@ import org.apache.hudi.client.common.HoodieSparkEngineContext;
 import org.apache.hudi.common.data.HoodieData;
 import org.apache.hudi.common.data.HoodiePairData;
 import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.function.SerializableBiFunction;
 import org.apache.hudi.common.function.SerializableFunction;
 import org.apache.hudi.common.function.SerializablePairFunction;
 import org.apache.hudi.common.util.collection.MappingIterator;
@@ -128,6 +129,11 @@ public class HoodieJavaRDD<T> implements HoodieData<T> {
   @Override
   public <O> HoodieData<O> mapPartitions(SerializableFunction<Iterator<T>, Iterator<O>> func, boolean preservesPartitioning) {
     return HoodieJavaRDD.of(rddData.mapPartitions(func::apply, preservesPartitioning));
+  }
+
+  @Override
+  public <O> HoodieData<O> mapPartitionsWithIndex(SerializableBiFunction<Integer, Iterator<T>, Iterator<O>> func, boolean preservesPartitioning) {
+    return HoodieJavaRDD.of(rddData.mapPartitionsWithIndex(func::apply, preservesPartitioning));
   }
 
   @Override
