@@ -1,6 +1,6 @@
 ---
 title: "Lakehouse Concurrency Control: Are we too optimistic?"
-excerpt: "Vinoth Chandar, Creator of Apache Hudi, dives into concurrency control mechanisms"
+excerpt: "Vinoth Chandar, Original Creator of Apache Hudi, dives into concurrency control mechanisms"
 author: vinoth
 category: blog
 image: /assets/images/blog/concurrency/MultiWriter.gif

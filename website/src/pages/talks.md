@@ -66,7 +66,7 @@ Data Summit Connect, May, 2021
 
 26. ["Apache Hudi: Large Scale Data Systems with Vinoth Chandar"](https://softwareengineeringdaily.com/2021/05/13/apache-hudi-large-scale-data-systems-with-vinoth-chandar/) - By Vinoth Chandar. SE Daily Podcast. May, 2021
 
-27. ["Meet the creator of Apache hudi: Vinoth Chandar"](https://www.youtube.com/watch?v=XcaFaJR4IVk) - By Vinoth Chandar. Presto Con Day, 2021
+27. ["Meet the original creator of Apache hudi: Vinoth Chandar"](https://www.youtube.com/watch?v=XcaFaJR4IVk) - By Vinoth Chandar. Presto Con Day, 2021
 
 28. ["Presto Eco system Panel Discussion"](https://www.youtube.com/watch?v=lsFSM2Z4kPs) - By Vinoth Chandar, Dipti Borkar, Nezih Yigitbasi, Maxime Beauchemin, Kishore. Presto Con, 2021
 
